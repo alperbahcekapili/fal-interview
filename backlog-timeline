@@ -1,5 +1,12 @@
 Logs 
 
+- 3.12.2025 11PM
+
+I have skimmed trough the paper. It seems that they have pretrained the model first with text-to-image dataset ensuring the cross-model semantic-textual alignment. 
+This gives a huge hint about text-to-image implementation. 
+
+Also when I look at the model architecture, I see an MLP block used for integrating timestep information. We do not need this block since we will not be generating videos. We can record the outputs for 0th timestep and use that value as input to the relevant transformer blocks
+
 - 3.12.2025
 
 I got the description of implementing Wan2.2 t2i and i2i. However, Wan2.2 is a video generation model. Using wan2.2 api to generate a single frame video is trivial which should be bare minimum(implementing requirements for serverless). 
