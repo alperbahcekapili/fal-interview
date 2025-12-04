@@ -635,7 +635,7 @@ def generate(args):
                 merge_video_audio(video_path=args.save_file, audio_path="tts.wav")
         del video
     else:
-        image = image4d[:,0,...]
+        image = image4d[:,-1,...]
         try:
             saved_file = save_image(image ,args.out_image)
         except Exception as e:

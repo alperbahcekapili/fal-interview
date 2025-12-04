@@ -350,7 +350,7 @@ class WanI2I:
                     use_dynamic_shifting=False)
                 sample_scheduler.set_timesteps(
                     sampling_steps, device=self.device, shift=shift)
-                timesteps = sample_scheduler.timesteps
+                timesteps = sample_scheduler.timesteps                
             elif sample_solver == 'dpm++':
                 sample_scheduler = FlowDPMSolverMultistepScheduler(
                     num_train_timesteps=self.num_train_timesteps,
@@ -371,11 +371,10 @@ class WanI2I:
             without going too far from the original image but we need to add a little 
             variance to it thus adding creativity parameter
             """
-
-            latent = noise
-            mask1, mask2 = masks_like([noise], zero=False)
-            mask2[0] = mask2[0] * (1 - creativity)
-            latent = (1. - mask2[0]) * z[0]  + mask2[0] * latent
+            
+            image_guidance_tendancy = 1-creativity
+            latent = z[0]
+            latent = sample_scheduler.add_noise(latent, torch.randn_like(latent), torch.Tensor([timesteps[int(len(timesteps)*image_guidance_tendancy)]]))
 
             arg_c = {
                 'context': context,
@@ -390,20 +389,10 @@ class WanI2I:
             if offload_model or self.init_on_cpu:
                 self.model.to(self.device)
                 torch.cuda.empty_cache()
-
-            for _, t in enumerate(tqdm(timesteps)):
+            for _, t in enumerate(tqdm(timesteps[int(len(timesteps)*image_guidance_tendancy):])):
                 latent_model_input = [latent.to(self.device)]
                 timestep = [t]
-
                 timestep = torch.stack(timestep).to(self.device)
-
-                temp_ts = (mask2[0][0][:, ::2, ::2] * timestep).flatten()
-                temp_ts = torch.cat([
-                    temp_ts,
-                    temp_ts.new_ones(seq_len - temp_ts.size(0)) * timestep
-                ])
-                timestep = temp_ts.unsqueeze(0)
-
                 noise_pred_cond = self.model(
                     latent_model_input, t=timestep, **arg_c)[0]
                 if offload_model:
@@ -422,8 +411,6 @@ class WanI2I:
                     return_dict=False,
                     generator=seed_g)[0]
                 latent = temp_x0.squeeze(0)
-                latent = (1. - mask2[0]) * z[0] + mask2[0] * latent
-
                 x0 = [latent]
                 del latent_model_input, timestep
 
