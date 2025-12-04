@@ -14,3 +14,15 @@ dashscope
 imageio-ffmpeg
 flash_attn
 numpy>=1.23.5,<2
+easydict
+diffusers[torch]
+ftfy
+transformers
+einops
+decord[torch]
+librosa
+imageio
+opencv-python
+peft
+dashscope
+huggingface_hub

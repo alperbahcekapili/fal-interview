@@ -18,7 +18,7 @@ import wan
 from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
 from wan.distributed.util import init_distributed_group
 from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
-from wan.utils.utils import merge_video_audio, save_video, str2bool
+from wan.utils.utils import merge_video_audio, save_video, str2bool, save_image
 
 
 EXAMPLE_PROMPT = {
@@ -35,6 +35,14 @@ EXAMPLE_PROMPT = {
     "ti2v-5B": {
         "prompt":
             "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
+    },
+    "t2i-5B": {
+    "prompt":
+        "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
+    },
+    "i2i-5B": {
+    "prompt":
+        "Two anthropomorphic cats in comfy boxing gear and bright gloves fight intensely on a spotlighted stage.",
     },
     "animate-14B": {
         "prompt": "视频中的人在做动作",
@@ -294,6 +302,16 @@ def _parse_args():
         default=80,
         help="Number of frames per clip, 48 or 80 or others (must be multiple of 4) for 14B s2v"
     )
+    parser.add_argument(
+        "--out_image",
+        type=str,
+        default="Alper.png",
+        help="Image file name to save")
+    parser.add_argument(
+        "--creativity",
+        type=float,
+        default=0.1,
+        help="In range [0,1]. 1 is only text guided generation, 0 is almost identical to image guidance")
     args = parser.parse_args()
     _validate_args(args)
 
@@ -318,6 +336,7 @@ def generate(args):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     device = local_rank
     _init_logging(rank)
+    image4d = None # This will be used as placeholder for iamge generation
 
     if args.offload_model is None:
         args.offload_model = False if world_size > 1 else True
@@ -425,6 +444,60 @@ def generate(args):
             guide_scale=args.sample_guide_scale,
             seed=args.base_seed,
             offload_model=args.offload_model)
+        
+    # Custom t2i task
+    elif "t2i" in args.task:
+        wan_t2i = wan.WanT2I(
+            config=cfg,
+            checkpoint_dir=args.ckpt_dir,
+            device_id=device,
+            rank=rank,
+            t5_fsdp=args.t5_fsdp,
+            dit_fsdp=args.dit_fsdp,
+            use_sp=(args.ulysses_size > 1),
+            t5_cpu=args.t5_cpu,
+            convert_model_dtype=args.convert_model_dtype,
+        )
+        logging.info("Generating image...")
+        image4d = wan_t2i.generate(
+            args.prompt,
+            size=SIZE_CONFIGS[args.size],
+            max_area=MAX_AREA_CONFIGS[args.size],
+            shift=args.sample_shift,
+            sample_solver=args.sample_solver,
+            sampling_steps=args.sample_steps,
+            guide_scale=args.sample_guide_scale,
+            seed=args.base_seed,
+            offload_model=args.offload_model
+        )
+    # Custom i2i task
+    elif "i2i" in args.task:
+        wan_i2i = wan.WanI2I(
+            config=cfg,
+            checkpoint_dir=args.ckpt_dir,
+            device_id=device,
+            rank=rank,
+            t5_fsdp=args.t5_fsdp,
+            dit_fsdp=args.dit_fsdp,
+            use_sp=(args.ulysses_size > 1),
+            t5_cpu=args.t5_cpu,
+            convert_model_dtype=args.convert_model_dtype,
+        )
+
+        logging.info(f"Generating video ...")
+        image4d = wan_i2i.generate(
+            args.prompt,
+            img=img,
+            size=SIZE_CONFIGS[args.size],
+            max_area=MAX_AREA_CONFIGS[args.size],
+            shift=args.sample_shift,
+            sample_solver=args.sample_solver,
+            sampling_steps=args.sample_steps,
+            guide_scale=args.sample_guide_scale,
+            seed=args.base_seed,
+            offload_model=args.offload_model,
+            creativity=args.creativity)
+        
     elif "ti2v" in args.task:
         logging.info("Creating WanTI2V pipeline.")
         wan_ti2v = wan.WanTI2V(
@@ -539,7 +612,7 @@ def generate(args):
             seed=args.base_seed,
             offload_model=args.offload_model)
 
-    if rank == 0:
+    if rank == 0 and args.task not in ["t2i-5B", "i2i-5B"]:
         if args.save_file is None:
             formatted_time = datetime.now().strftime("%Y%m%d_%H%M%S")
             formatted_prompt = args.prompt.replace(" ", "_").replace("/",
@@ -560,7 +633,16 @@ def generate(args):
                 merge_video_audio(video_path=args.save_file, audio_path=args.audio)
             else:
                 merge_video_audio(video_path=args.save_file, audio_path="tts.wav")
-    del video
+        del video
+    else:
+        image = image4d[:,0,...]
+        try:
+            saved_file = save_image(image ,args.out_image)
+        except Exception as e:
+            logging.error(f"Image cannot be saved successfully: {e}")
+        
+
+
 
     torch.cuda.synchronize()
     if dist.is_initialized():
