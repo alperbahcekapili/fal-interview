@@ -1,5 +1,13 @@
 Logs 
 
+
+
+- 4.12.2025 10:25PM
+
+
+I noticed that i2i generations are not as good looking as the t2i pipeline which I later figured out which is actually a big flaw. The new system is as follows: We get the latent from encoder. We also get timesteps from the scheduler. We decide on a  percentage of available steps that we want to go over which essentially allows us to decide the randomness level from the image guidance perspective. We get a parameter named "creativity" which takes values in range [0,1]. You can find example images of it at examples/alper-4_12_2025_v2
+
+
 - 4.12.2025 4PM
 
 I was able to integrate i2i and t2i pipelines from ti2v task. For t2i task was actually trivial because I only updated # of frames to be generated and save the resulting 
