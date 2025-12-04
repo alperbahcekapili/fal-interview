@@ -1,5 +1,25 @@
 Logs 
 
+- 4.12.2025 4PM
+
+I was able to integrate i2i and t2i pipelines from ti2v task. For t2i task was actually trivial because I only updated # of frames to be generated and save the resulting 
+tensor as image which util was already implemented
+
+i2i task was a little bit tricky because ti2v pipeline starts from the given image and gradually get a scene out of it. However in order to generate a single image, the idea of generating a series of images to wait that kind
+of variance does not make sense. When I looked at the code and look at the paper, I see that latenst(image) are initialized as random in t2v pipeline and with the image encoding in i2v pipeline. We need something in the middle in order to 
+generate a different image compared to given image. 
+
+When I look at the code they use masks to either mask out the image latent or random noise. Because we need to generate a latent which is not too far away from the given image's latent but still be close to it
+I decided to use mask values which range between 0-1 rather than using fixed 1's or 0's. And set it as a hyperparameter named "creativity". This way we can tune this parameter to decide on how different we want new image to be from the given.
+
+I have given examples in the folder: examples/alper-4_12_2025
+
+!! Observation: The generated image in the i2i pipeline looks suboptimal with visible texture problems. Is this related to wrong configuration of latent variable update ? I' ll be looking into this in more detail.
+
+
+
+
+
 - 3.12.2025 11PM
 
 I have skimmed trough the paper. It seems that they have pretrained the model first with text-to-image dataset ensuring the cross-model semantic-textual alignment. 
