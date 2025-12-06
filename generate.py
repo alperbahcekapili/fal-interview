@@ -312,6 +312,13 @@ def _parse_args():
         type=float,
         default=0.1,
         help="In range [0,1]. 1 is only text guided generation, 0 is almost identical to image guidance")
+    parser.add_argument(
+        "--extra_images",
+        nargs="+",
+        default=[],
+        help="Extra images that you want to blend in the generation process as list of paths")
+    
+
     args = parser.parse_args()
     _validate_args(args)
 
@@ -496,7 +503,8 @@ def generate(args):
             guide_scale=args.sample_guide_scale,
             seed=args.base_seed,
             offload_model=args.offload_model,
-            creativity=args.creativity)
+            creativity=args.creativity,
+            extra_images = args.extra_images)
         
     elif "ti2v" in args.task:
         logging.info("Creating WanTI2V pipeline.")

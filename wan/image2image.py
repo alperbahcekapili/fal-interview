@@ -186,7 +186,8 @@ class WanI2I:
                  n_prompt="",
                  seed=-1,
                  offload_model=True,
-                 creativity=0.1):
+                 creativity=0.1,
+                 extra_images=[]):
         r"""
         Generates video frames from text prompt using diffusion process.
 
@@ -236,9 +237,24 @@ class WanI2I:
             n_prompt=n_prompt,
             seed=seed,
             offload_model=offload_model,
-            creativity=creativity)
+            creativity=creativity,
+            extra_images=extra_images)
 
+    def load_extra_images(self, extra_images, outsize):
+        assert all([os.path.exists(i) for i in extra_images]), "Plase ensure all of the extra images exists"
+        for i in range(len(extra_images)):
+            impath = extra_images[i]
+            try:
+                img = Image.open(impath).convert("RGB")
+                img = img.resize(outsize)
+                img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device).unsqueeze(1)
+                extra_images[i] = img
+            except Exception as e:
+                print(f"While loading the following image, a problem has occured :{impath} error: {e} ")
+        return extra_images
+    
 
+                
 
     def i2i(self,
             input_prompt,
@@ -251,7 +267,8 @@ class WanI2I:
             n_prompt="",
             seed=-1,
             offload_model=True,
-            creativity=0.1):
+            creativity=0.1,
+            extra_images=[]):
         r"""
         Generates video frames from input image and text prompt using diffusion process.
 
@@ -309,10 +326,18 @@ class WanI2I:
         y1 = (img.height - oh) // 2
         img = img.crop((x1, y1, x1 + ow, y1 + oh))
         assert img.width == ow and img.height == oh
+        
+        
+        if extra_images:
+            extra_images = self.load_extra_images(extra_images, (ow, oh))
 
         # to tensor
         img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device).unsqueeze(1)
         self.timer.end("preprocess")
+
+
+
+
 
         F = 1
         seq_len = ((F - 1) // self.vae_stride[0] + 1) * (
@@ -351,8 +376,11 @@ class WanI2I:
         
 
         self.timer.start("image_encoding")
-        z = self.vae.encode([img])
+        z = self.vae.encode([img,*extra_images])
         self.timer.end("image_encoding")
+
+        z[0] = torch.stack(z, dim=0).mean(dim=0)
+
 
 
         @contextmanager

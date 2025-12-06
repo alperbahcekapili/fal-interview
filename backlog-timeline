@@ -1,5 +1,21 @@
 Logs 
 
+- 6.12.2025 9PM
+
+
+I have tried many samplers from diffuser library however I was not able to successfully integrate any of them into the current pipeline. Theoritically I should be able to plug in any sampler, and upon my research we have sampler options that might give us better results for lower number of iterations. I have conducted experiments with existing two of the samplers that are developed by wan engineers but in 6 steps I was not able to notice any substantial difference between generations in terms of accuracy. Therefore reducing the number of iterations with a better sampler is not an available option for now. 
+
+I decided that I have already spent too much time on samplers, thus I wanted to move on with the other part of the assignment "Additional functionality"
+
+There are many options that we can add to our existing pipeline but first feature that I wanted to implement is multiple image blending. This feature allows us to upload more than one image and create an iamge out of these. Text guidance is still relevant but we only update the image latent. Because VAE' s produce continous latent space's, we can easily take average of more than one latent and get a valid latent that represents both of the inputs. You can observe the example outputs from the folder examples/alper_6_12_2025_latent_mixing. Where inputs are fb.jpg and input.jpg, the text input is Boxer cat wears the red gloves. Has an angry look and threathens his opponents.
+
+- 6.12.2025 4PM
+
+I created a class named "Timer" to measure how much of time each component of the model take. After initial observation, it looked like T5 text model was taking too much of the time compared to other parts. We can directly optimized this part via torch.compile. And even with defualt settings I was able to push the model speed 3x. From ~6 seconds for 2 t5 inference to ~2 seconds. 
+
+You can also look at the time usage of other parts from without_opt.json file and the jupyter notebook where I try t5 optimization in an isolated environment at process_timer_output.ipynb.
+
+I could do the same optimization with both VAE and DiT blocks but in my current capabilities with my graphics card 3090, I am already pushing it to it's limit when optimazing. I am planning on moving forward with other types of optimizations such as using different sampler/schedulers
 
 
 - 4.12.2025 10:25PM
@@ -26,13 +42,6 @@ I have given examples in the folder: examples/alper-4_12_2025
 
 
 
-- 6.12.2025 4PM
-
-I created a class named "Timer" to measure how much of time each component of the model take. After initial observation, it looked like T5 text model was taking too much of the time compared to other parts. We can directly optimized this part via torch.compile. And even with defualt settings I was able to push the model speed 3x. From ~6 seconds for 2 t5 inference to ~2 seconds. 
-
-You can also look at the time usage of other parts from without_opt.json file and the jupyter notebook where I try t5 optimization in an isolated environment at process_timer_output.ipynb.
-
-I could do the same optimization with both VAE and DiT blocks but in my current capabilities with my graphics card 3090, I am already pushing it to it's limit when optimazing. I am planning on moving forward with other types of optimizations such as using different sampler/schedulers
 
 
 
