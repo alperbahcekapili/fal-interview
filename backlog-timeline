@@ -26,6 +26,14 @@ I have given examples in the folder: examples/alper-4_12_2025
 
 
 
+- 6.12.2025 4PM
+
+I created a class named "Timer" to measure how much of time each component of the model take. After initial observation, it looked like T5 text model was taking too much of the time compared to other parts. We can directly optimized this part via torch.compile. And even with defualt settings I was able to push the model speed 3x. From ~6 seconds for 2 t5 inference to ~2 seconds. 
+
+You can also look at the time usage of other parts from without_opt.json file and the jupyter notebook where I try t5 optimization in an isolated environment at process_timer_output.ipynb.
+
+I could do the same optimization with both VAE and DiT blocks but in my current capabilities with my graphics card 3090, I am already pushing it to it's limit when optimazing. I am planning on moving forward with other types of optimizations such as using different sampler/schedulers
+
 
 
 - 3.12.2025 11PM

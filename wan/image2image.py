@@ -29,9 +29,17 @@ from .utils.fm_solvers import (
 )
 from .utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 from .utils.utils import best_output_size, masks_like
+from .utils.timer import Timer
 
 
 class WanI2I:
+    def optimize_t5(self):
+        self.text_encoder.model = torch.compile(self.text_encoder.model)
+        texts = ["Alper example input"]
+        for i in range(10):
+            self.timer.start("text_encoding_in_optimize")
+            self.text_encoder(texts, device="cuda")
+            self.timer.end("text_encoding_in_optimize")
 
     def __init__(
         self,
@@ -73,6 +81,7 @@ class WanI2I:
                 Only works without FSDP.
         """
         self.device = torch.device(f"cuda:{device_id}")
+        self.timer = Timer()
         self.config = config
         self.rank = rank
         self.t5_cpu = t5_cpu
@@ -92,6 +101,11 @@ class WanI2I:
             checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint),
             tokenizer_path=os.path.join(checkpoint_dir, config.t5_tokenizer),
             shard_fn=shard_fn if t5_fsdp else None)
+        
+        self.text_encoder.model.eval().to(self.device)
+        # self.optimize_t5()
+
+        
 
         self.vae_stride = config.vae_stride
         self.patch_size = config.patch_size
@@ -114,6 +128,7 @@ class WanI2I:
             self.sp_size = 1
 
         self.sample_neg_prompt = config.sample_neg_prompt
+        
 
     def _configure_model(self, model, use_sp, dit_fsdp, shard_fn,
                          convert_model_dtype):
@@ -276,7 +291,9 @@ class WanI2I:
                 - W: Frame width (from max_area)
         """
         assert creativity >  0 and creativity < 1, "creativity parameter should be in range: [0,1]"
+        
 
+        self.timer.start("preprocess")
         # preprocess
         ih, iw = img.height, img.width
         dh, dw = self.patch_size[1] * self.vae_stride[1], self.patch_size[
@@ -285,6 +302,7 @@ class WanI2I:
 
         scale = max(ow / iw, oh / ih)
         img = img.resize((round(iw * scale), round(ih * scale)), Image.LANCZOS)
+        
 
         # center-crop
         x1 = (img.width - ow) // 2
@@ -294,6 +312,7 @@ class WanI2I:
 
         # to tensor
         img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device).unsqueeze(1)
+        self.timer.end("preprocess")
 
         F = 1
         seq_len = ((F - 1) // self.vae_stride[0] + 1) * (
@@ -314,12 +333,14 @@ class WanI2I:
 
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
-
+        
+        
         # preprocess
         if not self.t5_cpu:
-            self.text_encoder.model.to(self.device)
+            self.timer.start("text_encoding")
             context = self.text_encoder([input_prompt], self.device)
             context_null = self.text_encoder([n_prompt], self.device)
+            self.timer.end("text_encoding")
             if offload_model:
                 self.text_encoder.model.cpu()
         else:
@@ -327,8 +348,12 @@ class WanI2I:
             context_null = self.text_encoder([n_prompt], torch.device('cpu'))
             context = [t.to(self.device) for t in context]
             context_null = [t.to(self.device) for t in context_null]
+        
 
+        self.timer.start("image_encoding")
         z = self.vae.encode([img])
+        self.timer.end("image_encoding")
+
 
         @contextmanager
         def noop_no_sync():
@@ -393,17 +418,21 @@ class WanI2I:
                 latent_model_input = [latent.to(self.device)]
                 timestep = [t]
                 timestep = torch.stack(timestep).to(self.device)
+                self.timer.start("noise_pred_cond")
                 noise_pred_cond = self.model(
                     latent_model_input, t=timestep, **arg_c)[0]
+                self.timer.end("noise_pred_cond")
                 if offload_model:
                     torch.cuda.empty_cache()
+                self.timer.start("noise_pred_uncond")
                 noise_pred_uncond = self.model(
                     latent_model_input, t=timestep, **arg_null)[0]
+                self.timer.end("noise_pred_uncond")
                 if offload_model:
                     torch.cuda.empty_cache()
                 noise_pred = noise_pred_uncond + guide_scale * (
                     noise_pred_cond - noise_pred_uncond)
-
+                self.timer.start("scheduler_step")
                 temp_x0 = sample_scheduler.step(
                     noise_pred.unsqueeze(0),
                     t,
@@ -411,6 +440,7 @@ class WanI2I:
                     return_dict=False,
                     generator=seed_g)[0]
                 latent = temp_x0.squeeze(0)
+                self.timer.end("scheduler_step")
                 x0 = [latent]
                 del latent_model_input, timestep
 
@@ -430,4 +460,5 @@ class WanI2I:
         if dist.is_initialized():
             dist.barrier()
 
+        print(self.timer.summarize())
         return videos[0] if self.rank == 0 else None
