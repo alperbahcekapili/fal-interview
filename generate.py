@@ -317,6 +317,17 @@ def _parse_args():
         nargs="+",
         default=[],
         help="Extra images that you want to blend in the generation process as list of paths")
+    parser.add_argument(
+        "--deepcache_intervals",
+        type=int,
+        default=1,
+        help="Deepcache intervals that we want to take cache every n iterations")
+    parser.add_argument(
+        "--deepcache_blocks",
+        type=int,
+        default=0,
+        help="The number of blocks from the beginning of blocks to use cahce")
+    
     
 
     args = parser.parse_args()
@@ -489,6 +500,8 @@ def generate(args):
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype,
+            deepcache_interval=args.deepcache_intervals,
+            deepcache_blocks=args.deepcache_blocks
         )
 
         logging.info(f"Generating video ...")
@@ -505,6 +518,11 @@ def generate(args):
             offload_model=args.offload_model,
             creativity=args.creativity,
             extra_images = args.extra_images)
+        
+        
+
+
+
         
     elif "ti2v" in args.task:
         logging.info("Creating WanTI2V pipeline.")

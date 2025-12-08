@@ -1,5 +1,21 @@
 Logs 
 
+- 9.12.2025 1AM
+
+DeepCache is a method that allows us to eliminate a number of operations during denoising steps. It is observed that, high-level features change very slowly between close steps. And in the early layers of encoding input data ( First N layers of DiT ) high level semantic data is calculated. The latents calculated in these early steps are very similar across timesteps. Thus we can skip these early layers in certain periods. Actually there are two parameters we can play with: CAHCE_INTERVAL, CACHE_BLOCKS. We cache every CAHCE_INTERVAL, the first  CACHE_BLOCKS block output. DiT in Wan architecture has 32 layers and I was able to experiment different with different number of blocks as well as different interval values. Following is a short summary of my findings: 
+
+Without deepcache a forward step of Wan model takes ~0.18 seconds
+
+With interval 2 and block_num 20, the inference time is reduced with a very well magnitude: (0.18+0.03)/2=~0.11 Which corresponds to %40 speed increase for the diffusion process. However, with this methodology, we also lose fine details and there is a visible quality degragaiton in the generated image.
+
+With interval 2 and block_num 10, the optimized step takes ~0.093. The average is ~0.14 and overall speed gain is %22. Also the image is visually high quality.
+
+We can also increase the interval to 3, 4 which correspond to %27, ~%33 and outputs still look valid. We can try to find the best parameters with trial. The paper uses higher interval values and less percentage of the blocks are kept. 
+
+You can take a look at the visual results at examples/alper_9_12_2025_deepcache as well as the timer outputs
+
+
+
 - 6.12.2025 9PM
 
 

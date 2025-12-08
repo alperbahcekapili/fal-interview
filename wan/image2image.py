@@ -53,6 +53,8 @@ class WanI2I:
         t5_cpu=False,
         init_on_cpu=True,
         convert_model_dtype=False,
+        deepcache_blocks=10,
+        deepcache_interval=2
     ):
         r"""
         Initializes the Wan text-to-video generation model components.
@@ -79,6 +81,10 @@ class WanI2I:
             convert_model_dtype (`bool`, *optional*, defaults to False):
                 Convert DiT model parameters dtype to 'config.param_dtype'.
                 Only works without FSDP.
+            deepcache_blocks (`int` *optional*, defaults to 10):
+                Num of blocks to skip on deepcache
+            deepcache_interval (`int` *optional*, defaults to 2):
+                Interval to skip blocks
         """
         self.device = torch.device(f"cuda:{device_id}")
         self.timer = Timer()
@@ -120,7 +126,9 @@ class WanI2I:
             use_sp=use_sp,
             dit_fsdp=dit_fsdp,
             shard_fn=shard_fn,
-            convert_model_dtype=convert_model_dtype)
+            convert_model_dtype=convert_model_dtype,
+            deepcache_blocks=deepcache_blocks,
+            deepcache_interval=deepcache_interval)
 
         if use_sp:
             self.sp_size = get_world_size()
@@ -131,7 +139,7 @@ class WanI2I:
         
 
     def _configure_model(self, model, use_sp, dit_fsdp, shard_fn,
-                         convert_model_dtype):
+                         convert_model_dtype, deepcache_blocks, deepcache_interval):
         """
         Configures a model object. This includes setting evaluation modes,
         applying distributed parallel strategy, and handling device placement.
@@ -148,12 +156,21 @@ class WanI2I:
             convert_model_dtype (`bool`):
                 Convert DiT model parameters dtype to 'config.param_dtype'.
                 Only works without FSDP.
+            deepcache_blocks (`int` *optional*, defaults to 10):
+                Num of blocks to skip on deepcache
+            deepcache_interval (`int` *optional*, defaults to 2):
+                Interval to skip blocks
 
         Returns:
             torch.nn.Module:
                 The configured model.
         """
         model.eval().requires_grad_(False)
+        
+        model.CACHE_INTERVAL = deepcache_interval
+        model.CACHE_BLOCKS = deepcache_blocks
+
+        print(f"Configuring the model with following deepcache configuration: Interval:{model.CACHE_INTERVAL}, Blocks:{model.CACHE_BLOCKS}")
 
         if use_sp:
             for block in model.blocks:
@@ -171,6 +188,8 @@ class WanI2I:
                 model.to(self.param_dtype)
             if not self.init_on_cpu:
                 model.to(self.device)
+
+
 
         return model
 
@@ -442,19 +461,19 @@ class WanI2I:
             if offload_model or self.init_on_cpu:
                 self.model.to(self.device)
                 torch.cuda.empty_cache()
-            for _, t in enumerate(tqdm(timesteps[int(len(timesteps)*image_guidance_tendancy):])):
+            for step_ind, t in enumerate(tqdm(timesteps[int(len(timesteps)*image_guidance_tendancy):])):
                 latent_model_input = [latent.to(self.device)]
                 timestep = [t]
                 timestep = torch.stack(timestep).to(self.device)
                 self.timer.start("noise_pred_cond")
                 noise_pred_cond = self.model(
-                    latent_model_input, t=timestep, **arg_c)[0]
+                    latent_model_input, t=timestep, step_ind=step_ind, **arg_c)[0]
                 self.timer.end("noise_pred_cond")
                 if offload_model:
                     torch.cuda.empty_cache()
                 self.timer.start("noise_pred_uncond")
                 noise_pred_uncond = self.model(
-                    latent_model_input, t=timestep, **arg_null)[0]
+                    latent_model_input, t=timestep, step_ind=step_ind, **arg_null)[0]
                 self.timer.end("noise_pred_uncond")
                 if offload_model:
                     torch.cuda.empty_cache()

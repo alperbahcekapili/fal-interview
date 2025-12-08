@@ -317,7 +317,9 @@ class WanModel(ModelMixin, ConfigMixin):
                  window_size=(-1, -1),
                  qk_norm=True,
                  cross_attn_norm=True,
-                 eps=1e-6):
+                 eps=1e-6,
+                 deepcache_blocks=10,
+                 deepcache_interval=2):
         r"""
         Initialize the diffusion model backbone.
 
@@ -352,6 +354,11 @@ class WanModel(ModelMixin, ConfigMixin):
                 Enable cross-attention normalization
             eps (`float`, *optional*, defaults to 1e-6):
                 Epsilon value for normalization layers
+            deepcache_blocks (`int` *optional*, defaults to 10):
+                Num of blocks to skip on deepcache
+            deepcache_interval (`int` *optional*, defaults to 2):
+                Interval to skip blocks 
+
         """
 
         super().__init__()
@@ -373,6 +380,12 @@ class WanModel(ModelMixin, ConfigMixin):
         self.qk_norm = qk_norm
         self.cross_attn_norm = cross_attn_norm
         self.eps = eps
+
+        # DeepCache Implementation
+        self.CACHE_INTERVAL = deepcache_interval
+        self.CACHE_BLOCKS = deepcache_blocks
+        self.cache =  None # Init the same size as block output
+
 
         # embeddings
         self.patch_embedding = nn.Conv3d(
@@ -407,6 +420,7 @@ class WanModel(ModelMixin, ConfigMixin):
         # initialize weights
         self.init_weights()
 
+
     def forward(
         self,
         x,
@@ -414,6 +428,7 @@ class WanModel(ModelMixin, ConfigMixin):
         context,
         seq_len,
         y=None,
+        step_ind=1
     ):
         r"""
         Forward pass through the diffusion model
@@ -486,8 +501,17 @@ class WanModel(ModelMixin, ConfigMixin):
             context=context,
             context_lens=context_lens)
 
-        for block in self.blocks:
+
+        block_start_index = 0 if step_ind % self.CACHE_INTERVAL == 0 else self.CACHE_BLOCKS
+        block_ind = 0
+        if block_start_index !=0:
+            x = self.cache.clone().detach()
+        for block in self.blocks[block_start_index:]:
             x = block(x, **kwargs)
+            if block_ind  == self.CACHE_BLOCKS and block_start_index == 0:
+                self.cache = x.clone().detach()
+            block_ind += 1
+                
 
         # head
         x = self.head(x, e)
