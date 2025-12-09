@@ -74,7 +74,6 @@ class MyApp(fal.App):
             "https://github.com/alperbahcekapili/fal-interview.git",
             target_dir="/data",  # Use temp directory to avoid conflicts
             include_to_path=True,
-            commit_hash="7159813b984883995cc42ac3d448322bfd02e63d",
             repo_name="wan2_2",
         )
 
