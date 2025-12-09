@@ -1,5 +1,14 @@
 Logs 
 
+
+
+
+
+- 9.12.2025 12AM
+
+We also do not need to re-calculate negative prompt everytime because it is not updated frequently. We can cache it's encoder output. You can see the example output and the speedup from examples/alper_9_12_2025_t5neg_prompt_caching. This optimization gives us x2 speedup in text encoding phase.
+
+
 - 9.12.2025 1AM
 
 DeepCache is a method that allows us to eliminate a number of operations during denoising steps. It is observed that, high-level features change very slowly between close steps. And in the early layers of encoding input data ( First N layers of DiT ) high level semantic data is calculated. The latents calculated in these early steps are very similar across timesteps. Thus we can skip these early layers in certain periods. Actually there are two parameters we can play with: CAHCE_INTERVAL, CACHE_BLOCKS. We cache every CAHCE_INTERVAL, the first  CACHE_BLOCKS block output. DiT in Wan architecture has 32 layers and I was able to experiment different with different number of blocks as well as different interval values. Following is a short summary of my findings: 

@@ -109,7 +109,7 @@ class WanI2I:
             shard_fn=shard_fn if t5_fsdp else None)
         
         self.text_encoder.model.eval().to(self.device)
-        # self.optimize_t5()
+        self.optimize_t5()
 
         
 
@@ -378,12 +378,15 @@ class WanI2I:
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
         
+        # We do not need to recompute negative prompt over and over again
+        context_null = torch.load(open("negative_prompt_emb.pth", "rb"))
         
+
         # preprocess
         if not self.t5_cpu:
             self.timer.start("text_encoding")
             context = self.text_encoder([input_prompt], self.device)
-            context_null = self.text_encoder([n_prompt], self.device)
+            # context_null = self.text_encoder([n_prompt], self.device)
             self.timer.end("text_encoding")
             if offload_model:
                 self.text_encoder.model.cpu()
