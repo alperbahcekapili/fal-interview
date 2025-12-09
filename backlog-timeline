@@ -1,6 +1,9 @@
 Logs 
 
 
+- 9.12.2025 6 PM
+
+In this update I have tried to utilize trtexec tool for T5 text encoder model. While setting up the correct environment was the most difficult part about the update, it was fruitful. Previously single inference with T5 took around 0.1 seconds even after torch.compile. After converting the model to onnx and engine formats, single inference now takes ~0.009 which is almost x10 speedup. Similarly we can apply the same procedure to VAE and Diffusion models. You can find relevant time measurements and output image from ./examples/alper_9_12_2025_t5_opt_v2_engine. Also I have added my jupyter notebook which I used for validating the generated embeddings. 
 
 
 
@@ -64,9 +67,6 @@ I decided to use mask values which range between 0-1 rather than using fixed 1's
 I have given examples in the folder: examples/alper-4_12_2025
 
 !! Observation: The generated image in the i2i pipeline looks suboptimal with visible texture problems. Is this related to wrong configuration of latent variable update ? I' ll be looking into this in more detail.
-
-
-
 
 
 

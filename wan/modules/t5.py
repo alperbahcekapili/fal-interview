@@ -8,6 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .tokenizers import HuggingfaceTokenizer
+import tensorrt as trt
+import numpy as np
+import pycuda.driver as cuda
+import pycuda.autoinit
+
 
 __all__ = [
     'T5Model',
@@ -483,31 +488,157 @@ class T5EncoderModel:
         self.text_len = text_len
         self.dtype = dtype
         self.device = device
-        self.checkpoint_path = checkpoint_path
+        self.checkpoint_path = checkpoint_path # this is now engine path
         self.tokenizer_path = tokenizer_path
 
-        # init model
-        model = umt5_xxl(
-            encoder_only=True,
-            return_tokenizer=False,
-            dtype=dtype,
-            device=device).eval().requires_grad_(False)
-        logging.info(f'loading {checkpoint_path}')
-        model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
-        self.model = model
-        if shard_fn is not None:
-            self.model = shard_fn(self.model, sync_module_states=False)
-        else:
-            self.model.to(self.device)
-        # init tokenizer
+        # # init model
+        # model = umt5_xxl(
+        #     encoder_only=True,
+        #     return_tokenizer=False,
+        #     dtype=dtype,
+        #     device=device).eval().requires_grad_(False)
+        # logging.info(f'loading {checkpoint_path}')
+        # model.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
+        # self.model = model
+        # if shard_fn is not None:
+        #     self.model = shard_fn(self.model, sync_module_states=False)
+        # else:
+        #     self.model.to(self.device)
+        # # init tokenizer
+
+        TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+
+        print(f"Loading engine from {checkpoint_path}...")
+        with open(checkpoint_path, "rb") as f:
+            engine_data = f.read()
+
+        runtime = trt.Runtime(TRT_LOGGER)
+        self.engine = runtime.deserialize_cuda_engine(engine_data)
+
+        if self.engine is None:
+            raise RuntimeError("Failed to load engine!")
+
+        
+        self.context = self.engine.create_execution_context()
+        self.stream = cuda.Stream()
+
+
+        self.ids_name = self.engine.get_tensor_name(0)
+        self.mask_name = self.engine.get_tensor_name(1)
+        self.output_name = self.engine.get_tensor_name(2)
+
+
         self.tokenizer = HuggingfaceTokenizer(
             name=tokenizer_path, seq_len=text_len, clean='whitespace')
 
     def __call__(self, texts, device):
         ids, mask = self.tokenizer(
             texts, return_mask=True, add_special_tokens=True)
-        ids = ids.to(device)
-        mask = mask.to(device)
+        ids_device = ids.cuda().to(torch.long).contiguous()
+        mask_device = mask.cuda().to(torch.long).contiguous()  
+
         seq_lens = mask.gt(0).sum(dim=1).long()
-        context = self.model(ids, mask)
-        return [u[:v] for u, v in zip(context, seq_lens)]
+        input_shape = (1,512)
+        output_shape = (1,512,4096)
+
+        ids_device = ids.cuda().contiguous()
+        mask_device = mask.cuda().contiguous()
+
+        self.context.set_input_shape(self.ids_name, ids_device.shape)
+        self.context.set_input_shape(self.mask_name, mask_device.shape)
+        self.context.set_tensor_address(self.ids_name, ids_device.data_ptr())
+        self.context.set_tensor_address(self.mask_name, mask_device.data_ptr())
+
+        output_tensor = torch.empty(output_shape, dtype=torch.int16, device='cuda')
+        self.context.set_tensor_address(self.output_name, output_tensor.data_ptr())
+
+    
+        self.context.execute_async_v3(stream_handle=self.stream.handle)
+        torch.cuda.synchronize() # For timer report, we need to ensure it is finished
+        output_tensor = output_tensor.view(torch.bfloat16)
+        return [u[:v] for u, v in zip(output_tensor, seq_lens)]
+    
+
+        # host_inputs = []
+        # cuda_inputs = []
+        # host_outputs = []
+        # cuda_outputs = []        
+
+        
+        # ids_name = self.engine.get_tensor_name(0)
+        # self.context.set_input_shape(ids_name, input_shape)
+
+
+        # mask_name = self.engine.get_tensor_name(1)
+        # self.context.set_input_shape(mask_name, input_shape)
+
+        # output_name = self.engine.get_tensor_name(2)
+        # self.context.set_input_shape(mask_name, output_shape)
+        # trt_output_dtype = self.engine.get_tensor_dtype(output_name)
+
+
+        # # for output
+        # if trt_output_dtype == trt.DataType.BF16:
+        #     out_dtype = np.dtype(np.int16) 
+        # elif trt_output_dtype == trt.DataType.FP8:
+        #     out_dtype = np.dtype(np.int8)
+        # else:
+        #     try:
+        #         out_dtype = np.dtype(trt.nptype(trt_output_dtype))
+        #     except TypeError:
+        #         print(f"Error: Unsupported TensorRT type found: {trt_output_dtype}")
+        #         raise
+
+
+
+        # # for intputs
+        # trt_dtype = self.engine.get_tensor_dtype(ids_name)
+        # if trt_dtype == trt.DataType.BF16:
+        #     dtype = np.dtype(np.int16) 
+        # elif trt_dtype == trt.DataType.FP8:
+        #     dtype = np.dtype(np.int8)
+        # else:
+        #     try:
+        #         dtype = np.dtype(trt.nptype(trt_dtype))
+        #     except TypeError:
+        #         print(f"Error: Unsupported TensorRT type found: {trt_dtype}")
+        #         raise
+
+
+        # input_size = 512 * dtype.itemsize # because our input size is 1,512
+        # output_size = 512 * 4096 * out_dtype.itemsize # because our input size is 1,512, 4096
+
+
+        # # Allocate Device Memory
+        # ids_d_mem = cuda.mem_alloc(input_size)
+        # mask_d_mem = cuda.mem_alloc(input_size)
+        # out_d_mem = cuda.mem_alloc(output_size)
+
+        
+        # # Allocation Host Memory (Page-locked/Pinned for speed)
+        # ids_h_mem = cuda.pagelocked_empty(512, dtype)
+        # mask_h_mem = cuda.pagelocked_empty(512, dtype)
+        # out_h_mem = cuda.pagelocked_empty(512*4096, dtype)
+        
+        # self.context.set_tensor_address(ids_name, int(ids_d_mem))
+        # self.context.set_tensor_address(mask_name, int(mask_d_mem))
+        # self.context.set_tensor_address(output_name, int(out_h_mem))
+
+        # host_inputs.append(ids_h_mem)
+        # host_inputs.append(mask_h_mem)
+        # cuda_inputs.append(ids_d_mem)
+        # cuda_inputs.append(mask_d_mem)
+
+        # host_outputs.append(out_h_mem)
+        # cuda_outputs.append(out_d_mem)
+
+
+        # also handle output
+
+        
+
+
+
+
+        # context = self.model(ids, mask)
+        

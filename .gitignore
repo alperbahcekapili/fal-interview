@@ -6,6 +6,8 @@ new_checkpoint*
 batch_test*
 nohup*
 Wan2.2-TI2V-5B
+exports
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

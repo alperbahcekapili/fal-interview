@@ -107,9 +107,8 @@ class WanI2I:
             checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint),
             tokenizer_path=os.path.join(checkpoint_dir, config.t5_tokenizer),
             shard_fn=shard_fn if t5_fsdp else None)
-        
-        self.text_encoder.model.eval().to(self.device)
-        self.optimize_t5()
+    
+        # self.optimize_t5()
 
         
 
@@ -117,7 +116,7 @@ class WanI2I:
         self.patch_size = config.patch_size
         self.vae = Wan2_2_VAE(
             vae_pth=os.path.join(checkpoint_dir, config.vae_checkpoint),
-            device=self.device)
+            device="cpu")
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
@@ -389,14 +388,22 @@ class WanI2I:
             # context_null = self.text_encoder([n_prompt], self.device)
             self.timer.end("text_encoding")
             if offload_model:
-                self.text_encoder.model.cpu()
+                del self.text_encoder.context  
+                del self.text_encoder.engine
+                gc.collect()
+                torch.cuda.empty_cache()  
+                # self.text_encoder.model.cpu()
         else:
             context = self.text_encoder([input_prompt], torch.device('cpu'))
             context_null = self.text_encoder([n_prompt], torch.device('cpu'))
             context = [t.to(self.device) for t in context]
             context_null = [t.to(self.device) for t in context_null]
         
+        self.vae.model.to("cuda")
 
+        self.vae.scale[0] = self.vae.scale[0].to("cuda")
+        self.vae.scale[1] = self.vae.scale[1].to("cuda")
+        
         self.timer.start("image_encoding")
         z = self.vae.encode([img,*extra_images])
         self.timer.end("image_encoding")
