@@ -1,5 +1,9 @@
 Logs 
 
+- 10.12.2025 2AM
+
+I have integrated my codebase and all of it's functionality with fal serverless. Eventough it can be improved from error handling and logging perspectives, the current capabilities are present in fal serverless. Only missing piece is the tensorrt engine integration. Because I generated the engine in my RTX 3090 and it's architecture is different compared to H100 it is not usable.
+
 
 - 9.12.2025 6 PM
 
