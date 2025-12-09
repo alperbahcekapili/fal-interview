@@ -54,7 +54,8 @@ class WanI2I:
         init_on_cpu=True,
         convert_model_dtype=False,
         deepcache_blocks=10,
-        deepcache_interval=2
+        deepcache_interval=2,
+        engine=False
     ):
         r"""
         Initializes the Wan text-to-video generation model components.
@@ -104,19 +105,20 @@ class WanI2I:
             text_len=config.text_len,
             dtype=config.t5_dtype,
             device=torch.device('cpu'),
-            checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint),
+            checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint if not engine else config.engine_path),
             tokenizer_path=os.path.join(checkpoint_dir, config.t5_tokenizer),
             shard_fn=shard_fn if t5_fsdp else None)
     
         # self.optimize_t5()
-
+        if not engine:
+            self.text_encoder.model.eval().to(self.device)
         
 
         self.vae_stride = config.vae_stride
         self.patch_size = config.patch_size
         self.vae = Wan2_2_VAE(
             vae_pth=os.path.join(checkpoint_dir, config.vae_checkpoint),
-            device="cpu")
+            device=self.device if not engine else "cpu")
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
@@ -388,11 +390,13 @@ class WanI2I:
             # context_null = self.text_encoder([n_prompt], self.device)
             self.timer.end("text_encoding")
             if offload_model:
-                del self.text_encoder.context  
-                del self.text_encoder.engine
-                gc.collect()
-                torch.cuda.empty_cache()  
-                # self.text_encoder.model.cpu()
+                if self.text_encoder.engine is not None:
+                    del self.text_encoder.context  
+                    del self.text_encoder.engine
+                    gc.collect()
+                    torch.cuda.empty_cache()  
+                else:
+                    self.text_encoder.model.cpu()
         else:
             context = self.text_encoder([input_prompt], torch.device('cpu'))
             context_null = self.text_encoder([n_prompt], torch.device('cpu'))

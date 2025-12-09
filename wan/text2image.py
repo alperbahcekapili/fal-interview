@@ -45,6 +45,7 @@ class WanT2I:
         t5_cpu=False,
         init_on_cpu=True,
         convert_model_dtype=False,
+        engine=False
     ):
         r"""
         Initializes the Wan text-to-image generation model components.
@@ -88,7 +89,7 @@ class WanT2I:
             text_len=config.text_len,
             dtype=config.t5_dtype,
             device=torch.device('cpu'),
-            checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint),
+            checkpoint_path=os.path.join(checkpoint_dir, config.t5_checkpoint if not engine else config.engine_path),
             tokenizer_path=os.path.join(checkpoint_dir, config.t5_tokenizer),
             shard_fn=shard_fn if t5_fsdp else None)
 
@@ -339,7 +340,7 @@ class WanT2I:
                 self.model.to(self.device)
                 torch.cuda.empty_cache()
 
-            for _, t in enumerate(tqdm(timesteps)):
+            for step_ind, t in enumerate(tqdm(timesteps)):
                 latent_model_input = latents
                 timestep = [t]
 
@@ -353,9 +354,9 @@ class WanT2I:
                 timestep = temp_ts.unsqueeze(0)
 
                 noise_pred_cond = self.model(
-                    latent_model_input, t=timestep, **arg_c)[0]
+                    latent_model_input, t=timestep, step_ind=step_ind, **arg_c)[0]
                 noise_pred_uncond = self.model(
-                    latent_model_input, t=timestep, **arg_null)[0]
+                    latent_model_input, t=timestep, step_ind=step_ind, **arg_null)[0]
 
                 noise_pred = noise_pred_uncond + guide_scale * (
                     noise_pred_cond - noise_pred_uncond)
