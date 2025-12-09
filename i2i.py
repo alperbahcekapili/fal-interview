@@ -23,9 +23,15 @@ from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
 from wan.utils.utils import merge_video_audio, save_video, str2bool, save_image
 
 import numpy as np
+import traceback
 
-class Input(BaseModel):
+class T2IInput(BaseModel):
     prompt: str = Field(description="The prompt to generate an image from")
+
+class I2IInput(BaseModel):
+    prompt: str = Field(description="The prompt to generate an image from")
+    images: list[Image] = Field(description="The other input Image")
+    creativity: float = Field(description="The independency level from image input")
 
 class Output(BaseModel):
     image: Image = Field(description="The generated image")
@@ -59,21 +65,7 @@ class MyApp(fal.App):
         "fal"
     ]
     def setup(self):
-        import torch
-        
-        "--task", "i2i-5B",
-        "--size", "1280*704",
-        "--ckpt_dir", "./Wan2.2-TI2V-5B",
-        "--offload_model", "True",
-        "--convert_model_dtype",
-        "--prompt", "Boxer cat wears red gloves. Looking angry and has a fine texture.",
-        "--image", "/home/alpfischer/Wan2.2/input.jpg",
-        "--sample_steps", "100",
-        "--creativity", "0.3",
-        "--sample_guide_scale", "5.0",
-        "--sample_solver", "unipc",
-        "--deepcache_intervals", "3",
-        "--deepcache_blocks", "10"
+    
         
         # first get updated repository
         from fal.toolkit import FAL_MODEL_WEIGHTS_DIR, File, clone_repository
@@ -82,8 +74,8 @@ class MyApp(fal.App):
             "https://github.com/alperbahcekapili/fal-interview.git",
             target_dir="/data",  # Use temp directory to avoid conflicts
             include_to_path=True,
-            commit_hash="76492f830e52cac1e496bb64eda3e76172ef9c2c",
-            repo_name="fal-interview",
+            commit_hash="7159813b984883995cc42ac3d448322bfd02e63d",
+            repo_name="wan2_2",
         )
 
 
@@ -104,22 +96,44 @@ class MyApp(fal.App):
         cfg = WAN_CONFIGS["i2i-5B"]
         self.wan_t2i = wan.WanT2I(
             config=cfg,
-            checkpoint_dir="Wan2.2-TI2V-5B",
+            checkpoint_dir="/data/fal-interview/Wan2.2-TI2V-5B",
             device_id=0,
+            rank=0,
+            t5_fsdp=False,
+            dit_fsdp=False,
+            use_sp=False,
+            t5_cpu=False,
         )
 
 
+        self.wan_i2i = wan.WanI2I(        
+            config=cfg,
+            checkpoint_dir="/data/fal-interview/Wan2.2-TI2V-5B",
+            device_id=0,
+            rank=0,
+            t5_fsdp=False,
+            dit_fsdp=False,
+            use_sp=False,
+            t5_cpu=False,
+            deepcache_interval=2,
+            deepcache_blocks=10
+        )
+
     def tensor_to_pil(self, tensor):
+        from PIL import Image
+        print("Converting tensor to image...")
         tensor = (tensor + 1.0) / 2.0
         img_array = tensor * 255
+        print("Converting to numpy...")
         img_array = img_array.permute(1, 2, 0).cpu().numpy()
         img_array = img_array.astype(np.uint8)
+        print("Converting to PIL Image...")
         pil_image = Image.fromarray(img_array)
         return pil_image
         
 
-    @fal.endpoint("/")
-    def run(self, request: Input) -> Output:
+    @fal.endpoint("/t2i")
+    def runt2i(self, request: T2IInput) -> Output:
         try:
             image4d = self.wan_t2i.generate(
                 request.prompt,
@@ -128,6 +142,7 @@ class MyApp(fal.App):
                 shift=5.0,
                 sample_solver="unipc",
                 sampling_steps=50,
+                offload_model=False,
                 guide_scale=5.0,
                 seed=-1
             )
@@ -135,7 +150,56 @@ class MyApp(fal.App):
             value_range=(-1, 1)
             image = image.clamp(min(value_range), max(value_range))
             image = self.tensor_to_pil(image)
-            return Output(image=image)
+            print("PIL conversion completed...")
+            to_ret_image = Image.from_pil(image)
+            print("Fal Image conversion completed. Returning...")
+            response_obj = Output(image=to_ret_image)
+            print("Response obj constructed...")
+            print(response_obj)
+            return response_obj
         except Exception as e:
-            print(e)
+            traceback.print_exc()   # prints full stack trace
+        
+
+
+
+    @fal.endpoint("/i2i")
+    def runi2i(self, request: I2IInput) -> Output:
+        try:
+            
+            print("Got the request printing all: ")
+            print("|||||||||||||||<<")
+            print(request)
+            print("|||||||||||||||<<")
+
+            print("Converting image to PIL")
+            image = request.images[0].to_pil()
+            if len(request.images) > 1:
+                extra_images = [f.to_pil() for f in request.images[1:]] # request.extra_image.to_pil()
+            else:
+                extra_images = []
+
+
+            image4d = self.wan_i2i.generate(
+                request.prompt,
+                img= image,
+                size=SIZE_CONFIGS["1280*704"],
+                max_area=MAX_AREA_CONFIGS["1280*704"],
+                offload_model=False,
+                creativity=request.creativity,
+                extra_images=extra_images)
+        
+            image = image4d[:,-1,...]
+            value_range=(-1, 1)
+            image = image.clamp(min(value_range), max(value_range))
+            image = self.tensor_to_pil(image)
+            print("PIL conversion completed...")
+            to_ret_image = Image.from_pil(image)
+            print("Fal Image conversion completed. Returning...")
+            response_obj = Output(image=to_ret_image)
+            print("Response obj constructed...")
+            print(response_obj)
+            return response_obj
+        except Exception as e:
+            traceback.print_exc()   # prints full stack trace
         

@@ -260,12 +260,23 @@ class WanI2I:
             creativity=creativity,
             extra_images=extra_images)
 
-    def load_extra_images(self, extra_images, outsize):
+    def load_extra_images_path(self, extra_images, outsize):
         assert all([os.path.exists(i) for i in extra_images]), "Plase ensure all of the extra images exists"
         for i in range(len(extra_images)):
             impath = extra_images[i]
             try:
                 img = Image.open(impath).convert("RGB")
+                img = img.resize(outsize)
+                img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device).unsqueeze(1)
+                extra_images[i] = img
+            except Exception as e:
+                print(f"While loading the following image, a problem has occured :{impath} error: {e} ")
+        return extra_images
+    
+    def load_extra_images_pil(self, extra_images, outsize):
+        for i in range(len(extra_images)):
+            img = extra_images[i]
+            try:
                 img = img.resize(outsize)
                 img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device).unsqueeze(1)
                 extra_images[i] = img
@@ -348,8 +359,10 @@ class WanI2I:
         assert img.width == ow and img.height == oh
         
         
-        if extra_images:
-            extra_images = self.load_extra_images(extra_images, (ow, oh))
+        if extra_images and type(extra_images[0]) is str:
+            extra_images = self.load_extra_images_path(extra_images, (ow, oh))
+        elif extra_images:
+            extra_images = self.load_extra_images_pil(extra_images, (ow, oh))
 
         # to tensor
         img = TF.to_tensor(img).sub_(0.5).div_(0.5).to(self.device).unsqueeze(1)
