@@ -481,7 +481,7 @@ class WanI2I:
             }
 
             arg_null = {
-                'context': context_null,
+                'context': self.context_null,
                 'seq_len': seq_len,
             }
 

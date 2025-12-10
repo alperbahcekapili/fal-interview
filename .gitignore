@@ -7,6 +7,8 @@ batch_test*
 nohup*
 Wan2.2-TI2V-5B
 exports
+fal-interview-main
+fal-interview-main*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
