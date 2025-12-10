@@ -25,6 +25,8 @@ from wan.utils.utils import merge_video_audio, save_video, str2bool, save_image
 import numpy as np
 import traceback
 
+from PIL import Image as PILImage
+
 class T2IInput(BaseModel):
     prompt: str = Field(description="The prompt to generate an image from")
 
@@ -118,6 +120,11 @@ class MyApp(fal.App):
             deepcache_blocks=10
         )
 
+        img = PILImage.open("fallback_image.jpeg")
+        self.fallback_img_pil = img.convert("RGB")  # optional but often useful
+        self.fallback_image = Image.from_pil(self.fallback_img_pil)
+        
+
     def tensor_to_pil(self, tensor):
         from PIL import Image
         print("Converting tensor to image...")
@@ -134,6 +141,7 @@ class MyApp(fal.App):
     @fal.endpoint("/t2i")
     def runt2i(self, request: T2IInput) -> Output:
         try:
+            print("Got the request for text-to-image generation...")
             image4d = self.wan_t2i.generate(
                 request.prompt,
                 size=SIZE_CONFIGS["1280*704"],
@@ -158,6 +166,7 @@ class MyApp(fal.App):
             return response_obj
         except Exception as e:
             traceback.print_exc()   # prints full stack trace
+            return Output(image=self.fallback_image)
         
 
 
@@ -165,20 +174,18 @@ class MyApp(fal.App):
     @fal.endpoint("/i2i")
     def runi2i(self, request: I2IInput) -> Output:
         try:
-            
-            print("Got the request printing all: ")
-            print("|||||||||||||||<<")
-            print(request)
-            print("|||||||||||||||<<")
 
-            print("Converting image to PIL")
-            image = request.images[0].to_pil()
-            if len(request.images) > 1:
-                extra_images = [f.to_pil() for f in request.images[1:]] # request.extra_image.to_pil()
-            else:
-                extra_images = []
+            print("Converting incoming images to pil...")
+            try:
+                image = request.images[0].to_pil()
+                if len(request.images) > 1:
+                    extra_images = [f.to_pil() for f in request.images[1:]] # request.extra_image.to_pil()
+                else:
+                    extra_images = []
+            except Exception as e:
+                print("Reading and converting images failed...")
 
-
+            print("Image conversion successfull. Running inference...")
             image4d = self.wan_i2i.generate(
                 request.prompt,
                 img= image,
@@ -191,6 +198,7 @@ class MyApp(fal.App):
             image = image4d[:,-1,...]
             value_range=(-1, 1)
             image = image.clamp(min(value_range), max(value_range))
+
             image = self.tensor_to_pil(image)
             print("PIL conversion completed...")
             to_ret_image = Image.from_pil(image)
@@ -200,5 +208,7 @@ class MyApp(fal.App):
             print(response_obj)
             return response_obj
         except Exception as e:
-            traceback.print_exc()   # prints full stack trace
+            traceback.print_exc()   
+            return Output(image=self.fallback_image)
+
         
