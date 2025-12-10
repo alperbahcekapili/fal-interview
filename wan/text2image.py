@@ -114,6 +114,10 @@ class WanT2I:
             self.sp_size = 1
 
         self.sample_neg_prompt = config.sample_neg_prompt
+        
+        # We do not need to recompute negative prompt over and over again
+        self.context_null = torch.load(open("negative_prompt_emb.pth", "rb"))
+        
 
     def _configure_model(self, model, use_sp, dit_fsdp, shard_fn,
                          convert_model_dtype):
@@ -272,10 +276,13 @@ class WanT2I:
         seed_g = torch.Generator(device=self.device)
         seed_g.manual_seed(seed)
 
+   
+
         if not self.t5_cpu:
             self.text_encoder.model.to(self.device)
             context = self.text_encoder([input_prompt], self.device)
-            context_null = self.text_encoder([n_prompt], self.device)
+            # context_null = self.text_encoder([n_prompt], self.device)
+            context_null = self.context_null
             if offload_model:
                 self.text_encoder.model.cpu()
         else:

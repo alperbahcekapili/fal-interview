@@ -138,6 +138,8 @@ class WanI2I:
 
         self.sample_neg_prompt = config.sample_neg_prompt
         
+        # We do not need to recompute negative prompt over and over again
+        self.context_null = torch.load(open("negative_prompt_emb.pth", "rb"))
 
     def _configure_model(self, model, use_sp, dit_fsdp, shard_fn,
                          convert_model_dtype, deepcache_blocks, deepcache_interval):
@@ -392,8 +394,6 @@ class WanI2I:
         if n_prompt == "":
             n_prompt = self.sample_neg_prompt
         
-        # We do not need to recompute negative prompt over and over again
-        context_null = torch.load(open("negative_prompt_emb.pth", "rb"))
         
 
         # preprocess
