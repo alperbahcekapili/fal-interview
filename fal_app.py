@@ -28,11 +28,6 @@ import traceback
 from PIL import Image as PILImage
 
 
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 
 
 
@@ -137,13 +132,13 @@ class MyApp(fal.App):
 
     def tensor_to_pil(self, tensor):
         from PIL import Image
-        logger.info("Converting tensor to image...")
+        print("Converting tensor to image...")
         tensor = (tensor + 1.0) / 2.0
         img_array = tensor * 255
-        logger.info("Converting to numpy...")
+        print("Converting to numpy...")
         img_array = img_array.permute(1, 2, 0).cpu().numpy()
         img_array = img_array.astype(np.uint8)
-        logger.info("Converting to PIL Image...")
+        print("Converting to PIL Image...")
         pil_image = Image.fromarray(img_array)
         return pil_image
         
@@ -151,7 +146,7 @@ class MyApp(fal.App):
     @fal.endpoint("/t2i")
     def runt2i(self, request: T2IInput) -> Output:
         try:
-            logger.info("Got the request for text-to-image generation...")
+            print("Got the request for text-to-image generation...")
             image4d = self.wan_t2i.generate(
                 request.prompt,
                 size=SIZE_CONFIGS["1280*704"],
@@ -167,16 +162,16 @@ class MyApp(fal.App):
             value_range=(-1, 1)
             image = image.clamp(min(value_range), max(value_range))
             image = self.tensor_to_pil(image)
-            logger.debug("PIL conversion completed...")
+            print("PIL conversion completed...")
             to_ret_image = Image.from_pil(image)
-            logger.debug("Fal Image conversion completed. Returning...")
+            print("Fal Image conversion completed. Returning...")
             response_obj = Output(image=to_ret_image)
-            logger.debug("Response obj constructed...")
-            logger.debug(response_obj)
+            print("Response obj constructed...")
+            print(response_obj)
             return response_obj
         except Exception as e:
             traceback.print_exc()   # prints full stack trace
-            logger.error("Inference pipeline failed. Please check your inputs...")  
+            print("Inference pipeline failed. Please check your inputs...")  
             return Output(image=self.fallback_image)
         
 
@@ -186,7 +181,7 @@ class MyApp(fal.App):
     def runi2i(self, request: I2IInput) -> Output:
         try:
 
-            logger.debug("Converting incoming images to pil...")
+            print("Converting incoming images to pil...")
             try:
                 image = request.images[0].to_pil()
                 if len(request.images) > 1:
@@ -194,10 +189,10 @@ class MyApp(fal.App):
                 else:
                     extra_images = []
             except Exception as e:
-                logger.error("Reading and converting images failed...")
+                print("Reading and converting images failed...")
                 return Output(image=self.fallback_image)
 
-            logger.debug("Image conversion successfull. Running inference...")
+            print("Image conversion successfull. Running inference...")
             image4d = self.wan_i2i.generate(
                 request.prompt,
                 img= image,
@@ -212,16 +207,16 @@ class MyApp(fal.App):
             image = image.clamp(min(value_range), max(value_range))
 
             image = self.tensor_to_pil(image)
-            logger.debug("PIL conversion completed...")
+            print("PIL conversion completed...")
             to_ret_image = Image.from_pil(image)
-            logger.debug("Fal Image conversion completed. Returning...")
+            print("Fal Image conversion completed. Returning...")
             response_obj = Output(image=to_ret_image)
-            logger.debug("Response obj constructed...")
-            logger.debug(response_obj)
+            print("Response obj constructed...")
+            print(response_obj)
             return response_obj
         except Exception as e:
             traceback.print_exc() 
-            logger.error("Inference pipeline failed. Please check your inputs...")  
+            print("Inference pipeline failed. Please check your inputs...")  
             return Output(image=self.fallback_image)
 
         
